@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package product;
+
+service ProductService {
+  rpc FindAll (Empty) returns (ProductsResponse);
+  rpc FindOne (FindOneRequest) returns (ProductResponse);
+  rpc Create (CreateProductRequest) returns (ProductResponse);
+  rpc Update (UpdateProductRequest) returns (ProductResponse);
+  rpc Remove (FindOneRequest) returns (ProductResponse);
+  rpc CheckStock (CheckStockRequest) returns (CheckStockResponse);
+  rpc ReserveStock (ReserveStockRequest) returns (ReserveStockResponse);
+}
+
+message Empty {}
+
+message FindOneRequest {
+  string id = 1;
+}
+
+message CreateProductRequest {
+  string name = 1;
+  optional string description = 2;
+  double price = 3;
+  int32 stock = 4;
+  optional bool isActive = 5;
+}
+
+message UpdateProductRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional double price = 4;
+  optional int32 stock = 5;
+  optional bool isActive = 6;
+}
+
+message ProductResponse {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  double price = 4;
+  int32 stock = 5;
+  bool isActive = 6;
+  string createdAt = 7;
+  string updatedAt = 8;
+}
+
+message ProductsResponse {
+  repeated ProductResponse products = 1;
+}
+
+message CheckStockRequest {
+  string productId = 1;
+  int32 quantity = 2;
+}
+
+message CheckStockResponse {
+  bool available = 1;
+  int32 currentStock = 2;
+  double price = 3;
+  string name = 4;
+  string message = 5;
+}
+
+message ReserveStockRequest {
+  string productId = 1;
+  int32 quantity = 2;
+}
+
+message ReserveStockResponse {
+  bool success = 1;
+  string message = 2;
+}

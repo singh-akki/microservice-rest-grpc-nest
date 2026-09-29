@@ -1,107 +1,116 @@
 import {
     BadGatewayException,
     BadRequestException,
+    Inject,
     Injectable,
     NotFoundException,
+    OnModuleInit,
 } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
-import { ConfigService } from '@nestjs/config';
+import type { ClientGrpc } from '@nestjs/microservices';
+import { firstValueFrom, Observable } from 'rxjs';
+import { status } from '@grpc/grpc-js';
 import { CreateProductDto } from './dto/create-product.dto.js';
 import { UpdateProductDto } from './dto/update-product.dto.js';
-import { AxiosError } from 'axios';
+
+export interface ProductGrpc {
+    id: string;
+    name: string;
+    description: string;
+    price: number;
+    stock: number;
+    isActive: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface ProductsResponse {
+    products: ProductGrpc[];
+}
+
+export interface ProductGrpcService {
+    findAll(data: Record<string, never>): Observable<ProductsResponse>;
+    findOne(data: { id: string }): Observable<ProductGrpc>;
+    create(data: CreateProductDto): Observable<ProductGrpc>;
+    update(data: UpdateProductDto & { id: string }): Observable<ProductGrpc>;
+    remove(data: { id: string }): Observable<ProductGrpc>;
+}
 
 @Injectable()
-export class ProductsService {
+export class ProductsService implements OnModuleInit {
+    private productService!: ProductGrpcService;
+
     constructor(
-        private readonly http: HttpService,
-        private readonly config: ConfigService,
+        @Inject('PRODUCT_PACKAGE') private readonly client: ClientGrpc,
     ) { }
 
-    private get baseUrl(): string {
-        return this.config.get<string>(
-            'PRODUCT_SERVICE_URL',
-            'http://localhost:3001',
-        );
+    onModuleInit() {
+        this.productService = this.client.getService<ProductGrpcService>('ProductService');
     }
 
-    private handleAxiosError(error: unknown, defaultMessage: string): never {
-        if (error instanceof AxiosError && error.response) {
-            const status = error.response.status;
-            const message = error.response.data?.message ?? defaultMessage;
+    private handleGrpcError(error: any, defaultMessage: string): never {
+        const code = error?.code;
+        const message = error?.details || defaultMessage;
 
-            if (status === 404) {
-                throw new NotFoundException(message);
-            }
-            if (status === 400) {
-                throw new BadRequestException(message);
-            }
+        if (code === status.NOT_FOUND) {
+            throw new NotFoundException(message);
         }
-        throw new BadGatewayException('Product service is unavailable');
+        if (code === status.INVALID_ARGUMENT) {
+            throw new BadRequestException(message);
+        }
+        if (code === status.UNAVAILABLE) {
+            throw new BadGatewayException('Product service is unavailable');
+        }
+        throw new BadGatewayException(message || 'Product service error');
     }
 
     async findAll() {
         try {
             const response = await firstValueFrom(
-                this.http.get(`${this.baseUrl}/products`, {
-                    timeout: 5000,
-                }),
+                this.productService.findAll({}),
             );
-            return response.data;
+            return response.products;
         } catch (error) {
-            this.handleAxiosError(error, 'Failed to fetch products');
+            this.handleGrpcError(error, 'Failed to fetch products');
         }
     }
 
     async findOne(id: string) {
         try {
-            const response = await firstValueFrom(
-                this.http.get(`${this.baseUrl}/products/${id}`, {
-                    timeout: 5000,
-                }),
+            return await firstValueFrom(
+                this.productService.findOne({ id }),
             );
-            return response.data;
         } catch (error) {
-            this.handleAxiosError(error, `Product with ID ${id} not found`);
+            this.handleGrpcError(error, `Product with ID ${id} not found`);
         }
     }
 
     async create(dto: CreateProductDto) {
         try {
-            const response = await firstValueFrom(
-                this.http.post(`${this.baseUrl}/products`, dto, {
-                    timeout: 5000,
-                }),
+            return await firstValueFrom(
+                this.productService.create(dto),
             );
-            return response.data;
         } catch (error) {
-            this.handleAxiosError(error, 'Failed to create product');
+            this.handleGrpcError(error, 'Failed to create product');
         }
     }
 
     async update(id: string, dto: UpdateProductDto) {
         try {
-            const response = await firstValueFrom(
-                this.http.patch(`${this.baseUrl}/products/${id}`, dto, {
-                    timeout: 5000,
-                }),
+            return await firstValueFrom(
+                this.productService.update({ id, ...dto }),
             );
-            return response.data;
         } catch (error) {
-            this.handleAxiosError(error, `Failed to update product ${id}`);
+            this.handleGrpcError(error, `Failed to update product ${id}`);
         }
     }
 
     async remove(id: string) {
         try {
-            const response = await firstValueFrom(
-                this.http.delete(`${this.baseUrl}/products/${id}`, {
-                    timeout: 5000,
-                }),
+            return await firstValueFrom(
+                this.productService.remove({ id }),
             );
-            return response.data;
         } catch (error) {
-            this.handleAxiosError(error, `Failed to delete product ${id}`);
+            this.handleGrpcError(error, `Failed to delete product ${id}`);
         }
     }
 }

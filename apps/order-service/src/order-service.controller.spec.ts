@@ -5,18 +5,33 @@ import { OrderServiceService } from './order-service.service.js';
 describe('OrderServiceController', () => {
   let orderServiceController: OrderServiceController;
 
+  const mockOrderService = {
+    create: vi.fn(),
+    findAll: vi.fn().mockResolvedValue([]),
+    findOne: vi.fn(),
+  };
+
   beforeEach(async () => {
     const app: TestingModule = await Test.createTestingModule({
       controllers: [OrderServiceController],
-      providers: [OrderServiceService],
+      providers: [
+        {
+          provide: OrderServiceService,
+          useValue: mockOrderService,
+        },
+      ],
     }).compile();
 
     orderServiceController = app.get<OrderServiceController>(OrderServiceController);
   });
 
-  describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(orderServiceController.getHello()).toBe('Hello World!');
-    });
+  it('should be defined', () => {
+    expect(orderServiceController).toBeDefined();
+  });
+
+  it('should find all orders', async () => {
+    const result = await orderServiceController.findAll();
+    expect(result).toEqual([]);
+    expect(mockOrderService.findAll).toHaveBeenCalled();
   });
 });

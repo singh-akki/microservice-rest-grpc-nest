@@ -1,10 +1,29 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { ClientsModule, Transport } from '@nestjs/microservices';
+import { join } from 'path';
+import { DatabaseModule } from '@app/database';
 import { OrderServiceController } from './order-service.controller.js';
 import { OrderServiceService } from './order-service.service.js';
 
 @Module({
-  imports: [],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    DatabaseModule,
+    ClientsModule.register([
+      {
+        name: 'PRODUCT_PACKAGE',
+        transport: Transport.GRPC,
+        options: {
+          package: 'product',
+          protoPath: join(process.cwd(), 'proto/product.proto'),
+          url: process.env.PRODUCT_GRPC_URL ?? 'localhost:50051',
+        },
+      },
+    ]),
+  ],
   controllers: [OrderServiceController],
   providers: [OrderServiceService],
+  exports: [OrderServiceService],
 })
 export class OrderServiceModule {}

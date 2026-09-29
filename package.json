@@ -16,7 +16,7 @@
     "start:prod": "node dist/apps/ecom-management/main",
     "lint": "oxlint apps libs",
     "lint:check": "oxlint apps libs",
-    "typecheck": "tsc --noEmit -p apps/api-gateway/tsconfig.app.json && tsc --noEmit -p apps/product-service/tsconfig.app.json && tsc --noEmit -p libs/database/tsconfig.lib.json && tsc --noEmit -p libs/redis/tsconfig.lib.json",
+    "typecheck": "tsc --noEmit -p apps/api-gateway/tsconfig.app.json && tsc --noEmit -p apps/product-service/tsconfig.app.json && tsc --noEmit -p apps/order-service/tsconfig.app.json && tsc --noEmit -p libs/database/tsconfig.lib.json && tsc --noEmit -p libs/redis/tsconfig.lib.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",

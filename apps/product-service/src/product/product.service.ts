@@ -126,4 +126,84 @@ export class ProductService {
 
         return deleted;
     }
+
+    async checkStock(productId: string, quantity: number) {
+        const product = await this.findOne(productId);
+
+        if (!product) {
+            return {
+                available: false,
+                currentStock: 0,
+                price: 0,
+                name: '',
+                message: `Product with ID "${productId}" not found`,
+            };
+        }
+
+        if (!product.isActive) {
+            return {
+                available: false,
+                currentStock: product.stock,
+                price: Number(product.price),
+                name: product.name,
+                message: `Product "${product.name}" is not active`,
+            };
+        }
+
+        if (product.stock < quantity) {
+            return {
+                available: false,
+                currentStock: product.stock,
+                price: Number(product.price),
+                name: product.name,
+                message: `Insufficient stock for "${product.name}": requested ${quantity}, available ${product.stock}`,
+            };
+        }
+
+        return {
+            available: true,
+            currentStock: product.stock,
+            price: Number(product.price),
+            name: product.name,
+            message: 'Stock is available',
+        };
+    }
+
+    async reserveStock(productId: string, quantity: number) {
+        const product = await this.db.product.findUnique({
+            where: { id: productId },
+        });
+
+        if (!product) {
+            return {
+                success: false,
+                message: `Product with ID "${productId}" not found`,
+            };
+        }
+
+        if (product.stock < quantity) {
+            return {
+                success: false,
+                message: `Insufficient stock for "${product.name}"`,
+            };
+        }
+
+        await this.db.product.update({
+            where: { id: productId },
+            data: {
+                stock: {
+                    decrement: quantity,
+                },
+            },
+        });
+
+        // Invalidate cache
+        await this.redis.del(`product:${productId}`);
+        await this.redis.del('products:all');
+
+        return {
+            success: true,
+            message: `Successfully reserved ${quantity} units of "${product.name}"`,
+        };
+    }
 }

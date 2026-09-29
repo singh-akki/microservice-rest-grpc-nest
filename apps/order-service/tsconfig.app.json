@@ -3,9 +3,13 @@
   "compilerOptions": {
     "composite": true,
     "declaration": true,
-    "rootDir": "./src",
     "outDir": "../../dist/apps/order-service"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
+  "exclude": ["node_modules", "dist", "test", "**/*spec.ts"],
+  "references": [
+    {
+      "path": "../../libs/database/tsconfig.lib.json"
+    }
+  ]
 }

@@ -1,20 +1,19 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProductsService } from './products.service.js';
-import { HttpService } from '@nestjs/axios';
-import { ConfigService } from '@nestjs/config';
 
 describe('ProductsService', () => {
   let service: ProductsService;
 
-  const mockHttpService = {
-    get: vi.fn(),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
+  const mockGrpcService = {
+    findAll: vi.fn(),
+    findOne: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    remove: vi.fn(),
   };
 
-  const mockConfigService = {
-    get: vi.fn().mockReturnValue('http://localhost:3001'),
+  const mockClientGrpc = {
+    getService: vi.fn().mockReturnValue(mockGrpcService),
   };
 
   beforeEach(async () => {
@@ -22,17 +21,14 @@ describe('ProductsService', () => {
       providers: [
         ProductsService,
         {
-          provide: HttpService,
-          useValue: mockHttpService,
-        },
-        {
-          provide: ConfigService,
-          useValue: mockConfigService,
+          provide: 'PRODUCT_PACKAGE',
+          useValue: mockClientGrpc,
         },
       ],
     }).compile();
 
     service = module.get<ProductsService>(ProductsService);
+    service.onModuleInit();
   });
 
   it('should be defined', () => {
