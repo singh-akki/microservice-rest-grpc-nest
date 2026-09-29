@@ -40,6 +40,10 @@ describe('OrderServiceService', () => {
     getService: vi.fn().mockReturnValue(mockGrpcService),
   };
 
+  const mockRabbitClient = {
+    emit: vi.fn(),
+  };
+
   beforeEach(async () => {
     vi.clearAllMocks();
     mockRedis.get.mockResolvedValue(null);
@@ -59,6 +63,10 @@ describe('OrderServiceService', () => {
         {
           provide: 'PRODUCT_PACKAGE',
           useValue: mockClientGrpc,
+        },
+        {
+          provide: 'RABBITMQ_SERVICE',
+          useValue: mockRabbitClient,
         },
       ],
     }).compile();
@@ -241,6 +249,7 @@ describe('OrderServiceService', () => {
         id: 'order-1',
         userId: 'user-1',
         total: 100,
+        createdAt: new Date('2026-09-29T10:00:00.000Z'),
         items: [{ id: 'item-1', productId: 'prod-1', quantity: 2, price: 50 }],
       };
       mockDb.order.create.mockResolvedValue(createdOrder);
@@ -251,6 +260,14 @@ describe('OrderServiceService', () => {
       });
 
       expect(result).toEqual(createdOrder);
+      expect(mockRabbitClient.emit).toHaveBeenCalledWith(
+        'order.created',
+        expect.objectContaining({
+          orderId: 'order-1',
+          userId: 'user-1',
+          total: 100,
+        }),
+      );
       expect(mockRedis.set).toHaveBeenCalledWith(
         'idempotency:order:key-123',
         createdOrder,

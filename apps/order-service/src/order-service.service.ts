@@ -8,7 +8,7 @@ import {
     NotFoundException,
     OnModuleInit,
 } from '@nestjs/common';
-import type { ClientGrpc } from '@nestjs/microservices';
+import type { ClientGrpc, ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom, Observable } from 'rxjs';
 import { DatabaseService } from '@app/database';
 import { RedisService } from '@app/redis';
@@ -60,6 +60,7 @@ export class OrderServiceService implements OnModuleInit {
         private readonly db: DatabaseService,
         private readonly redis: RedisService,
         @Inject('PRODUCT_PACKAGE') private readonly client: ClientGrpc,
+        @Inject('RABBITMQ_SERVICE') private readonly rabbitClient: ClientProxy,
     ) { }
 
     onModuleInit() {
@@ -219,6 +220,28 @@ export class OrderServiceService implements OnModuleInit {
         if (idempotencyKey && resultKey) {
             await this.redis.set(resultKey, order, 86400);
             await this.redis.del(`idempotency:lock:${idempotencyKey}`);
+        }
+
+        // 9. Publish order.created event asynchronously to RabbitMQ
+        try {
+            this.rabbitClient.emit('order.created', {
+                orderId: order.id,
+                userId: order.userId,
+                userEmail: user.email,
+                userName: user.name,
+                total: Number(order.total),
+                items: normalizedItems.map((item) => ({
+                    productId: item.productId,
+                    quantity: item.quantity,
+                    price: priceMap.get(item.productId) ?? 0,
+                })),
+                createdAt: order.createdAt.toISOString(),
+            });
+            this.logger.log(`Published order.created event for orderId: ${order.id}`);
+        } catch (publishError: any) {
+            this.logger.warn(
+                `Failed to emit order.created event for order ${order.id}: ${publishError.message}`,
+            );
         }
 
         return order;

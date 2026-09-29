@@ -22,6 +22,21 @@ import { OrderServiceService } from './order-service.service.js';
           url: process.env.PRODUCT_GRPC_URL ?? 'localhost:50051',
         },
       },
+      {
+        name: 'RABBITMQ_SERVICE',
+        transport: Transport.RMQ,
+        options: {
+          urls: [process.env.RABBITMQ_URL ?? 'amqp://localhost:5672'],
+          queue: 'orders_queue',
+          queueOptions: {
+            durable: true,
+            arguments: {
+              'x-dead-letter-exchange': 'orders_dlx',
+              'x-dead-letter-routing-key': 'orders_dead_letter',
+            },
+          },
+        },
+      },
     ]),
   ],
   controllers: [OrderServiceController],
