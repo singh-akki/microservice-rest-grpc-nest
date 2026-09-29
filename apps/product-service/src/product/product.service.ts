@@ -127,83 +127,151 @@ export class ProductService {
         return deleted;
     }
 
-    async checkStock(productId: string, quantity: number) {
-        const product = await this.findOne(productId);
+    async checkStock(items: { productId: string; quantity: number }[]) {
+        const productIds = items.map((i) => i.productId);
+        const products = await this.db.product.findMany({
+            where: { id: { in: productIds } },
+        });
 
-        if (!product) {
-            return {
-                available: false,
-                currentStock: 0,
-                price: 0,
-                name: '',
-                message: `Product with ID "${productId}" not found`,
-            };
-        }
+        const productMap = new Map(products.map((p) => [p.id, p]));
+        const results = [];
+        let allAvailable = true;
 
-        if (!product.isActive) {
-            return {
-                available: false,
+        for (const item of items) {
+            const product = productMap.get(item.productId);
+
+            if (!product) {
+                allAvailable = false;
+                results.push({
+                    productId: item.productId,
+                    available: false,
+                    currentStock: 0,
+                    price: 0,
+                    name: '',
+                    message: `Product with ID "${item.productId}" not found`,
+                });
+                continue;
+            }
+
+            if (!product.isActive) {
+                allAvailable = false;
+                results.push({
+                    productId: item.productId,
+                    available: false,
+                    currentStock: product.stock,
+                    price: Number(product.price),
+                    name: product.name,
+                    message: `Product "${product.name}" is not active`,
+                });
+                continue;
+            }
+
+            if (product.stock < item.quantity) {
+                allAvailable = false;
+                results.push({
+                    productId: item.productId,
+                    available: false,
+                    currentStock: product.stock,
+                    price: Number(product.price),
+                    name: product.name,
+                    message: `Insufficient stock for "${product.name}": requested ${item.quantity}, available ${product.stock}`,
+                });
+                continue;
+            }
+
+            results.push({
+                productId: item.productId,
+                available: true,
                 currentStock: product.stock,
                 price: Number(product.price),
                 name: product.name,
-                message: `Product "${product.name}" is not active`,
-            };
-        }
-
-        if (product.stock < quantity) {
-            return {
-                available: false,
-                currentStock: product.stock,
-                price: Number(product.price),
-                name: product.name,
-                message: `Insufficient stock for "${product.name}": requested ${quantity}, available ${product.stock}`,
-            };
+                message: 'Stock is available',
+            });
         }
 
         return {
-            available: true,
-            currentStock: product.stock,
-            price: Number(product.price),
-            name: product.name,
-            message: 'Stock is available',
+            allAvailable,
+            items: results,
         };
     }
 
-    async reserveStock(productId: string, quantity: number) {
-        const product = await this.db.product.findUnique({
-            where: { id: productId },
-        });
+    async reserveStock(items: { productId: string; quantity: number }[]) {
+        try {
+            await this.db.$transaction(async (tx) => {
+                for (const item of items) {
+                    const result = await tx.product.updateMany({
+                        where: {
+                            id: item.productId,
+                            isActive: true,
+                            stock: {
+                                gte: item.quantity,
+                            },
+                        },
+                        data: {
+                            stock: {
+                                decrement: item.quantity,
+                            },
+                        },
+                    });
 
-        if (!product) {
+                    if (result.count === 0) {
+                        throw new Error(
+                            `Insufficient stock or inactive product: ${item.productId}`,
+                        );
+                    }
+                }
+            });
+
+            // Invalidate cache for all affected products
+            for (const item of items) {
+                await this.redis.del(`product:${item.productId}`);
+            }
+            await this.redis.del('products:all');
+
+            return {
+                success: true,
+                message: 'Stock successfully reserved',
+                failedProductId: '',
+            };
+        } catch (error: any) {
             return {
                 success: false,
-                message: `Product with ID "${productId}" not found`,
+                message: error.message || 'Failed to reserve stock',
+                failedProductId: '',
             };
         }
+    }
 
-        if (product.stock < quantity) {
+    async releaseStock(items: { productId: string; quantity: number }[]) {
+        try {
+            await this.db.$transaction(async (tx) => {
+                for (const item of items) {
+                    await tx.product.updateMany({
+                        where: { id: item.productId },
+                        data: {
+                            stock: {
+                                increment: item.quantity,
+                            },
+                        },
+                    });
+                }
+            });
+
+            // Invalidate cache for all affected products
+            for (const item of items) {
+                await this.redis.del(`product:${item.productId}`);
+            }
+            await this.redis.del('products:all');
+
+            return {
+                success: true,
+                message: 'Stock successfully released',
+            };
+        } catch (error: any) {
             return {
                 success: false,
-                message: `Insufficient stock for "${product.name}"`,
+                message: error.message || 'Failed to release stock',
             };
         }
-
-        await this.db.product.update({
-            where: { id: productId },
-            data: {
-                stock: {
-                    decrement: quantity,
-                },
-            },
-        });
-
-        // Invalidate cache
-        await this.redis.del(`product:${productId}`);
-        await this.redis.del('products:all');
-
-        return {
-            success: true,
-            message: `Successfully reserved ${quantity} units of "${product.name}"`,
-        };
     }
 }

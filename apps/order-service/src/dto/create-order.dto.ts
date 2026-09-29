@@ -4,6 +4,7 @@ import {
     IsArray,
     IsInt,
     IsNotEmpty,
+    IsOptional,
     IsString,
     Min,
     ValidateNested,
@@ -29,4 +30,9 @@ export class CreateOrderDto {
     @ValidateNested({ each: true })
     @Type(() => OrderItemDto)
     items: OrderItemDto[];
+
+    @IsOptional()
+    @IsString()
+    @IsNotEmpty()
+    idempotencyKey?: string;
 }

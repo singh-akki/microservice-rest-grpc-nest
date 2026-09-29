@@ -1,17 +1,27 @@
 import {
     BadRequestException,
+    ConflictException,
     Inject,
     Injectable,
+    InternalServerErrorException,
+    Logger,
     NotFoundException,
     OnModuleInit,
 } from '@nestjs/common';
 import type { ClientGrpc } from '@nestjs/microservices';
 import { firstValueFrom, Observable } from 'rxjs';
 import { DatabaseService } from '@app/database';
-import { OrderStatus } from '@prisma/client';
+import { RedisService } from '@app/redis';
+import { Order, OrderStatus } from '@prisma/client';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 
-export interface CheckStockResponse {
+export interface StockItem {
+    productId: string;
+    quantity: number;
+}
+
+export interface ItemStockStatus {
+    productId: string;
     available: boolean;
     currentStock: number;
     price: number;
@@ -19,22 +29,36 @@ export interface CheckStockResponse {
     message: string;
 }
 
+export interface CheckStockResponse {
+    allAvailable: boolean;
+    items: ItemStockStatus[];
+}
+
 export interface ReserveStockResponse {
+    success: boolean;
+    message: string;
+    failedProductId: string;
+}
+
+export interface ReleaseStockResponse {
     success: boolean;
     message: string;
 }
 
 export interface ProductGrpcService {
-    checkStock(data: { productId: string; quantity: number }): Observable<CheckStockResponse>;
-    reserveStock(data: { productId: string; quantity: number }): Observable<ReserveStockResponse>;
+    checkStock(data: { items: StockItem[] }): Observable<CheckStockResponse>;
+    reserveStock(data: { items: StockItem[] }): Observable<ReserveStockResponse>;
+    releaseStock(data: { items: StockItem[] }): Observable<ReleaseStockResponse>;
 }
 
 @Injectable()
 export class OrderServiceService implements OnModuleInit {
+    private readonly logger = new Logger(OrderServiceService.name);
     private productService!: ProductGrpcService;
 
     constructor(
         private readonly db: DatabaseService,
+        private readonly redis: RedisService,
         @Inject('PRODUCT_PACKAGE') private readonly client: ClientGrpc,
     ) { }
 
@@ -42,8 +66,44 @@ export class OrderServiceService implements OnModuleInit {
         this.productService = this.client.getService<ProductGrpcService>('ProductService');
     }
 
-    async create(dto: CreateOrderDto) {
-        // Verify user exists
+    async create(dto: CreateOrderDto): Promise<Order> {
+        const idempotencyKey = dto.idempotencyKey;
+        const lockKey = idempotencyKey ? `idempotency:lock:${idempotencyKey}` : null;
+        const resultKey = idempotencyKey ? `idempotency:order:${idempotencyKey}` : null;
+
+        // 1. Idempotency Check (Duplicate Requests)
+        if (idempotencyKey && resultKey && lockKey) {
+            const cachedOrder = await this.redis.get<Order>(resultKey);
+            if (cachedOrder) {
+                this.logger.log(`Returning idempotent cached order for key: ${idempotencyKey}`);
+                return cachedOrder;
+            }
+
+            const acquired = await this.redis.setIfNotExists(lockKey, '1', 60);
+            if (!acquired) {
+                throw new ConflictException(
+                    'An order with this idempotency key is currently being processed. Please wait.',
+                );
+            }
+        }
+
+        try {
+            return await this.executeCreateOrder(dto, idempotencyKey, resultKey);
+        } catch (error) {
+            // If processing failed, release the lock so the customer can retry
+            if (lockKey) {
+                await this.redis.del(lockKey);
+            }
+            throw error;
+        }
+    }
+
+    private async executeCreateOrder(
+        dto: CreateOrderDto,
+        idempotencyKey?: string,
+        resultKey?: string | null,
+    ): Promise<Order> {
+        // 2. Validate User Existence
         const user = await this.db.user.findUnique({
             where: { id: dto.userId },
         });
@@ -52,83 +112,114 @@ export class OrderServiceService implements OnModuleInit {
             throw new NotFoundException(`User with ID "${dto.userId}" not found`);
         }
 
-        // 1. gRPC call to ProductService to check stock for each item
-        const verifiedItems: {
-            productId: string;
-            quantity: number;
-            price: number;
-            name: string;
-        }[] = [];
-
+        // 3. Deduplicate Product IDs in Single Order
+        // Merges quantities if the same product is passed multiple times
+        const mergedItemsMap = new Map<string, number>();
         for (const item of dto.items) {
-            let stockCheck: CheckStockResponse;
-            try {
-                stockCheck = await firstValueFrom(
-                    this.productService.checkStock({
-                        productId: item.productId,
-                        quantity: item.quantity,
-                    }),
-                );
-            } catch (err: any) {
-                throw new BadRequestException(
-                    `Failed to verify stock with Product Service: ${err?.message ?? 'Service unavailable'}`,
-                );
-            }
-
-            if (!stockCheck.available) {
-                throw new BadRequestException(
-                    stockCheck.message || `Item ${item.productId} is not available`,
-                );
-            }
-
-            verifiedItems.push({
-                productId: item.productId,
-                quantity: item.quantity,
-                price: stockCheck.price,
-                name: stockCheck.name,
-            });
+            const current = mergedItemsMap.get(item.productId) ?? 0;
+            mergedItemsMap.set(item.productId, current + item.quantity);
         }
 
-        // 2. Reserve stock for all items
-        for (const item of verifiedItems) {
-            const reserveResult = await firstValueFrom(
-                this.productService.reserveStock({
-                    productId: item.productId,
-                    quantity: item.quantity,
-                }),
-            );
-
-            if (!reserveResult.success) {
-                throw new BadRequestException(
-                    reserveResult.message || `Failed to reserve stock for ${item.name}`,
-                );
-            }
-        }
-
-        // 3. Calculate total amount
-        const total = verifiedItems.reduce(
-            (sum, item) => sum + item.price * item.quantity,
-            0,
+        const normalizedItems: StockItem[] = Array.from(mergedItemsMap.entries()).map(
+            ([productId, quantity]) => ({
+                productId,
+                quantity,
+            }),
         );
 
-        // 4. Save to PostgreSQL in Prisma transaction
-        const order = await this.db.order.create({
-            data: {
-                userId: dto.userId,
-                status: OrderStatus.CONFIRMED,
-                total,
-                items: {
-                    create: verifiedItems.map((item) => ({
-                        productId: item.productId,
-                        quantity: item.quantity,
-                        price: item.price,
-                    })),
+        // 4. Batch Stock Check via gRPC
+        let checkResult: CheckStockResponse;
+        try {
+            checkResult = await firstValueFrom(
+                this.productService.checkStock({ items: normalizedItems }),
+            );
+        } catch (err: any) {
+            throw new BadRequestException(
+                `Failed to communicate with Product Service: ${err?.message ?? 'Service unavailable'}`,
+            );
+        }
+
+        if (!checkResult.allAvailable) {
+            const unavailable = checkResult.items.filter((i) => !i.available);
+            const messages = unavailable.map((i) => i.message).join('; ');
+            throw new BadRequestException(`Order cannot be placed: ${messages}`);
+        }
+
+        const priceMap = new Map(
+            checkResult.items.map((i) => [i.productId, i.price]),
+        );
+
+        // 5. Atomic Batch Stock Reservation via gRPC (Concurrency & Partial Failure Protection)
+        let reserveResult: ReserveStockResponse;
+        try {
+            reserveResult = await firstValueFrom(
+                this.productService.reserveStock({ items: normalizedItems }),
+            );
+        } catch (err: any) {
+            throw new BadRequestException(
+                `Stock reservation failed: ${err?.message ?? 'Service unavailable'}`,
+            );
+        }
+
+        if (!reserveResult.success) {
+            throw new BadRequestException(
+                reserveResult.message || 'Failed to reserve stock for items',
+            );
+        }
+
+        // 6. Calculate total price
+        const total = normalizedItems.reduce((sum, item) => {
+            const price = priceMap.get(item.productId) ?? 0;
+            return sum + price * item.quantity;
+        }, 0);
+
+        // 7. Persist Order to PostgreSQL with SAGA Compensation on Failure
+        let order: Order;
+        try {
+            order = await this.db.order.create({
+                data: {
+                    userId: dto.userId,
+                    status: OrderStatus.CONFIRMED,
+                    total,
+                    items: {
+                        create: normalizedItems.map((item) => ({
+                            productId: item.productId,
+                            quantity: item.quantity,
+                            price: priceMap.get(item.productId) ?? 0,
+                        })),
+                    },
                 },
-            },
-            include: {
-                items: true,
-            },
-        });
+                include: {
+                    items: true,
+                },
+            });
+        } catch (dbError: any) {
+            // CRITICAL: Database failure after stock was reserved -> COMPENSATE by releasing stock
+            this.logger.error(
+                `PostgreSQL order creation failed: ${dbError.message}. Initiating stock release compensation...`,
+            );
+
+            try {
+                await firstValueFrom(
+                    this.productService.releaseStock({ items: normalizedItems }),
+                );
+                this.logger.log('Stock successfully released after order DB error.');
+            } catch (compensationError: any) {
+                this.logger.error(
+                    `CRITICAL SAGA FAILURE: Failed to release stock after order failure: ${compensationError.message}`,
+                );
+            }
+
+            throw new InternalServerErrorException(
+                'Failed to record order in database. Any reserved stock has been safely released.',
+            );
+        }
+
+        // 8. Cache idempotent result (24h TTL) & clean up lock
+        if (idempotencyKey && resultKey) {
+            await this.redis.set(resultKey, order, 86400);
+            await this.redis.del(`idempotency:lock:${idempotencyKey}`);
+        }
 
         return order;
     }

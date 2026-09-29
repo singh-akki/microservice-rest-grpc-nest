@@ -121,12 +121,17 @@ export class ProductController {
     }
 
     @GrpcMethod('ProductService', 'CheckStock')
-    async grpcCheckStock(data: { productId: string; quantity: number }) {
-        return this.productService.checkStock(data.productId, data.quantity);
+    async grpcCheckStock(data: { items: { productId: string; quantity: number }[] }) {
+        return this.productService.checkStock(data.items ?? []);
     }
 
     @GrpcMethod('ProductService', 'ReserveStock')
-    async grpcReserveStock(data: { productId: string; quantity: number }) {
-        return this.productService.reserveStock(data.productId, data.quantity);
+    async grpcReserveStock(data: { items: { productId: string; quantity: number }[] }) {
+        return this.productService.reserveStock(data.items ?? []);
+    }
+
+    @GrpcMethod('ProductService', 'ReleaseStock')
+    async grpcReleaseStock(data: { items: { productId: string; quantity: number }[] }) {
+        return this.productService.releaseStock(data.items ?? []);
     }
 }

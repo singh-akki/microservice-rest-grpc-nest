@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { join } from 'path';
 import { DatabaseModule } from '@app/database';
+import { RedisModule } from '@app/redis';
 import { OrderServiceController } from './order-service.controller.js';
 import { OrderServiceService } from './order-service.service.js';
 
@@ -10,6 +11,7 @@ import { OrderServiceService } from './order-service.service.js';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     DatabaseModule,
+    RedisModule,
     ClientsModule.register([
       {
         name: 'PRODUCT_PACKAGE',

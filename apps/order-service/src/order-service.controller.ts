@@ -2,6 +2,7 @@ import {
     Body,
     Controller,
     Get,
+    Headers,
     Param,
     Post,
 } from '@nestjs/common';
@@ -13,7 +14,13 @@ export class OrderServiceController {
     constructor(private readonly orderService: OrderServiceService) { }
 
     @Post()
-    create(@Body() dto: CreateOrderDto) {
+    create(
+        @Body() dto: CreateOrderDto,
+        @Headers('idempotency-key') headerIdempotencyKey?: string,
+    ) {
+        if (headerIdempotencyKey && !dto.idempotencyKey) {
+            dto.idempotencyKey = headerIdempotencyKey;
+        }
         return this.orderService.create(dto);
     }
 

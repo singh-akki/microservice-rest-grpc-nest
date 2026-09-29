@@ -10,6 +10,7 @@ service ProductService {
   rpc Remove (FindOneRequest) returns (ProductResponse);
   rpc CheckStock (CheckStockRequest) returns (CheckStockResponse);
   rpc ReserveStock (ReserveStockRequest) returns (ReserveStockResponse);
+  rpc ReleaseStock (ReleaseStockRequest) returns (ReleaseStockResponse);
 }
 
 message Empty {}
@@ -50,25 +51,44 @@ message ProductsResponse {
   repeated ProductResponse products = 1;
 }
 
-message CheckStockRequest {
+message StockItem {
   string productId = 1;
   int32 quantity = 2;
+}
+
+message CheckStockRequest {
+  repeated StockItem items = 1;
+}
+
+message ItemStockStatus {
+  string productId = 1;
+  bool available = 2;
+  int32 currentStock = 3;
+  double price = 4;
+  string name = 5;
+  string message = 6;
 }
 
 message CheckStockResponse {
-  bool available = 1;
-  int32 currentStock = 2;
-  double price = 3;
-  string name = 4;
-  string message = 5;
+  bool allAvailable = 1;
+  repeated ItemStockStatus items = 2;
 }
 
 message ReserveStockRequest {
-  string productId = 1;
-  int32 quantity = 2;
+  repeated StockItem items = 1;
 }
 
 message ReserveStockResponse {
+  bool success = 1;
+  string message = 2;
+  string failedProductId = 3;
+}
+
+message ReleaseStockRequest {
+  repeated StockItem items = 1;
+}
+
+message ReleaseStockResponse {
   bool success = 1;
   string message = 2;
 }
