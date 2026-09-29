@@ -16,11 +16,10 @@ describe('OrderServiceController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
+  it('/orders (GET)', () => {
     return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
+      .get('/orders')
+      .expect(200);
   });
 
   afterEach(async () => {
