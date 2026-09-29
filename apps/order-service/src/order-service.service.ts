@@ -224,8 +224,9 @@ export class OrderServiceService implements OnModuleInit {
         return order;
     }
 
-    async findAll() {
+    async findAll(userId?: string) {
         return this.db.order.findMany({
+            where: userId ? { userId } : undefined,
             include: {
                 items: true,
             },

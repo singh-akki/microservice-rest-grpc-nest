@@ -5,6 +5,7 @@ import {
     Headers,
     Param,
     Post,
+    Query,
 } from '@nestjs/common';
 import { OrderServiceService } from './order-service.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
@@ -25,8 +26,8 @@ export class OrderServiceController {
     }
 
     @Get()
-    findAll() {
-        return this.orderService.findAll();
+    findAll(@Query('userId') userId?: string) {
+        return this.orderService.findAll(userId);
     }
 
     @Get(':id')

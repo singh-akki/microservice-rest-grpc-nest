@@ -6,6 +6,7 @@ import { RedisModule } from '@app/redis';
 import { ApiGatewayController } from './api-gateway.controller.js';
 import { ApiGatewayService } from './api-gateway.service.js';
 import { ProductsModule } from './products/products.module.js';
+import { OrdersModule } from './orders/orders.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module.js';
 import { HealthController } from './health/health.controller.js';
@@ -33,6 +34,7 @@ import { HealthService } from './health/health.service.js';
       ],
     }),
     ProductsModule,
+    OrdersModule,
     AuthModule,
   ],
   controllers: [ApiGatewayController, HealthController],
