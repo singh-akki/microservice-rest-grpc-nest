@@ -1,9 +1,16 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { join } from 'path';
 import { DatabaseModule } from '@app/database';
 import { RedisModule } from '@app/redis';
+import {
+  ObservabilityModule,
+  CorrelationIdMiddleware,
+  LoggingInterceptor,
+  MetricsInterceptor,
+} from '@app/observability';
 import { OrderServiceController } from './order-service.controller.js';
 import { OrderServiceService } from './order-service.service.js';
 
@@ -12,6 +19,7 @@ import { OrderServiceService } from './order-service.service.js';
     ConfigModule.forRoot({ isGlobal: true }),
     DatabaseModule,
     RedisModule,
+    ObservabilityModule,
     ClientsModule.register([
       {
         name: 'PRODUCT_PACKAGE',
@@ -40,7 +48,21 @@ import { OrderServiceService } from './order-service.service.js';
     ]),
   ],
   controllers: [OrderServiceController],
-  providers: [OrderServiceService],
+  providers: [
+    OrderServiceService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: LoggingInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: MetricsInterceptor,
+    },
+  ],
   exports: [OrderServiceService],
 })
-export class OrderServiceModule {}
+export class OrderServiceModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+  }
+}

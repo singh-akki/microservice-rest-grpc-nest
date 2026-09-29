@@ -7,7 +7,7 @@ import { ApiGatewayModule } from './../src/api-gateway.module.js';
 describe('ApiGatewayController (e2e)', () => {
   let app: INestApplication<App>;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [ApiGatewayModule],
     }).compile();
@@ -23,7 +23,16 @@ describe('ApiGatewayController (e2e)', () => {
       .expect('Hello World!');
   });
 
-  afterEach(async () => {
+  it('/metrics (GET) should expose Prometheus metrics', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/metrics')
+      .expect(200);
+
+    expect(res.text).toContain('ecom_');
+    expect(res.text).toContain('process_cpu_user_seconds_total');
+  });
+
+  afterAll(async () => {
     await app.close();
   });
 });

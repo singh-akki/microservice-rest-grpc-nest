@@ -3,7 +3,6 @@
   "compilerOptions": {
     "composite": true,
     "declaration": true,
-    "rootDir": "./src",
     "outDir": "../../dist/apps/api-gateway"
   },
   "include": ["src/**/*"],
@@ -14,6 +13,9 @@
     },
     {
       "path": "../../libs/redis/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/observability/tsconfig.lib.json"
     }
   ]
 }

@@ -146,12 +146,14 @@ describe('OrderServiceService', () => {
         ],
       });
 
-      expect(mockGrpcService.checkStock).toHaveBeenCalledWith({
-        items: [{ productId: 'prod-1', quantity: 4 }],
-      });
-      expect(mockGrpcService.reserveStock).toHaveBeenCalledWith({
-        items: [{ productId: 'prod-1', quantity: 4 }],
-      });
+      expect(mockGrpcService.checkStock).toHaveBeenCalledWith(
+        { items: [{ productId: 'prod-1', quantity: 4 }] },
+        expect.anything(),
+      );
+      expect(mockGrpcService.reserveStock).toHaveBeenCalledWith(
+        { items: [{ productId: 'prod-1', quantity: 4 }] },
+        expect.anything(),
+      );
     });
 
     it('should throw BadRequestException if any item is out of stock', async () => {
@@ -216,9 +218,10 @@ describe('OrderServiceService', () => {
       );
 
       // Verify Saga compensating action was called
-      expect(mockGrpcService.releaseStock).toHaveBeenCalledWith({
-        items: [{ productId: 'prod-1', quantity: 2 }],
-      });
+      expect(mockGrpcService.releaseStock).toHaveBeenCalledWith(
+        { items: [{ productId: 'prod-1', quantity: 2 }] },
+        expect.anything(),
+      );
     });
 
     it('should successfully create order and cache idempotency result', async () => {

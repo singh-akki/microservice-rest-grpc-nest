@@ -11,6 +11,7 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { AxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
+import { getCorrelationId, injectTraceHeaders } from '@app/observability';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 
 @Injectable()
@@ -51,6 +52,14 @@ export class OrdersService {
         throw new BadGatewayException('Order service is unavailable');
     }
 
+    private getOutgoingHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+        const headers: Record<string, string> = {
+            'x-correlation-id': getCorrelationId(),
+            ...extraHeaders,
+        };
+        return injectTraceHeaders(headers);
+    }
+
     async create(
         userId: string,
         dto: CreateOrderDto,
@@ -58,10 +67,11 @@ export class OrdersService {
     ) {
         try {
             const idempotencyKey = headerIdempotencyKey || dto.idempotencyKey;
-            const headers: Record<string, string> = {};
+            const extraHeaders: Record<string, string> = {};
             if (idempotencyKey) {
-                headers['idempotency-key'] = idempotencyKey;
+                extraHeaders['idempotency-key'] = idempotencyKey;
             }
+            const headers = this.getOutgoingHeaders(extraHeaders);
 
             // Bind authenticated userId into the order service payload
             const payload = {
@@ -85,8 +95,10 @@ export class OrdersService {
 
     async findAll(userId?: string) {
         try {
+            const headers = this.getOutgoingHeaders();
             const response = await firstValueFrom(
                 this.http.get(`${this.baseUrl}/orders`, {
+                    headers,
                     params: userId ? { userId } : undefined,
                     timeout: 5000,
                 }),
@@ -99,8 +111,10 @@ export class OrdersService {
 
     async findOne(id: string) {
         try {
+            const headers = this.getOutgoingHeaders();
             const response = await firstValueFrom(
                 this.http.get(`${this.baseUrl}/orders/${id}`, {
+                    headers,
                     timeout: 5000,
                 }),
             );

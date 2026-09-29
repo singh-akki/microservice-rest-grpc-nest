@@ -13,6 +13,9 @@
     },
     {
       "path": "../../libs/redis/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/observability/tsconfig.lib.json"
     }
   ]
 }

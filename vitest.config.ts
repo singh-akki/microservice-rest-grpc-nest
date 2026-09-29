@@ -13,6 +13,7 @@ export default defineConfig({
       '@app/database': resolve(__dirname, './libs/database/src'),
       '@app/redis': resolve(__dirname, './libs/redis/src'),
       '@app/cache/redis': resolve(__dirname, './libs/redis/src'),
+      '@app/observability': resolve(__dirname, './libs/observability/src'),
     },
   },
   server: {

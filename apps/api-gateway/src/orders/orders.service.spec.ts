@@ -60,10 +60,13 @@ describe('OrdersService', () => {
           userId: 'user-123',
           idempotencyKey: 'key-abc',
         },
-        {
-          headers: { 'idempotency-key': 'key-abc' },
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'idempotency-key': 'key-abc',
+            'x-correlation-id': expect.any(String),
+          }),
           timeout: 10000,
-        },
+        }),
       );
       expect(result).toEqual(orderData);
     });
@@ -92,7 +95,12 @@ describe('OrdersService', () => {
 
       expect(mockHttpService.get).toHaveBeenCalledWith(
         'http://localhost:3002/orders/order-1',
-        { timeout: 5000 },
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'x-correlation-id': expect.any(String),
+          }),
+          timeout: 5000,
+        }),
       );
       expect(result).toEqual(orderData);
     });

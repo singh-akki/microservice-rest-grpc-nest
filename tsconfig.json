@@ -40,6 +40,12 @@
       ],
       "@app/cache/redis/*": [
         "./libs/redis/src/*"
+      ],
+      "@app/observability": [
+        "./libs/observability/src"
+      ],
+      "@app/observability/*": [
+        "./libs/observability/src/*"
       ]
     }
   },
@@ -62,6 +68,9 @@
     },
     {
       "path": "./libs/redis/tsconfig.lib.json"
+    },
+    {
+      "path": "./libs/observability/tsconfig.lib.json"
     }
   ]
 }

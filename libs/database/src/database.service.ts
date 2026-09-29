@@ -11,7 +11,13 @@ export class DatabaseService extends PrismaClient implements OnModuleInit {
       process.env['DATABASE_URL'] ??
       '';
     const adapter = new PrismaPg({ connectionString });
-    super({ adapter });
+    super({
+      adapter,
+      log: [
+        { emit: 'event', level: 'query' },
+        { emit: 'event', level: 'error' },
+      ],
+    });
   }
 
   async onModuleInit() {

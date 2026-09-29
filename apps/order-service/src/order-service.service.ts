@@ -7,11 +7,14 @@ import {
     Logger,
     NotFoundException,
     OnModuleInit,
+    Optional,
 } from '@nestjs/common';
 import type { ClientGrpc, ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom, Observable } from 'rxjs';
+import { Metadata } from '@grpc/grpc-js';
 import { DatabaseService } from '@app/database';
 import { RedisService } from '@app/redis';
+import { getCorrelationId, MetricsService } from '@app/observability';
 import { Order, OrderStatus } from '@prisma/client';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 
@@ -46,9 +49,9 @@ export interface ReleaseStockResponse {
 }
 
 export interface ProductGrpcService {
-    checkStock(data: { items: StockItem[] }): Observable<CheckStockResponse>;
-    reserveStock(data: { items: StockItem[] }): Observable<ReserveStockResponse>;
-    releaseStock(data: { items: StockItem[] }): Observable<ReleaseStockResponse>;
+    checkStock(data: { items: StockItem[] }, metadata?: Metadata): Observable<CheckStockResponse>;
+    reserveStock(data: { items: StockItem[] }, metadata?: Metadata): Observable<ReserveStockResponse>;
+    releaseStock(data: { items: StockItem[] }, metadata?: Metadata): Observable<ReleaseStockResponse>;
 }
 
 @Injectable()
@@ -61,10 +64,17 @@ export class OrderServiceService implements OnModuleInit {
         private readonly redis: RedisService,
         @Inject('PRODUCT_PACKAGE') private readonly client: ClientGrpc,
         @Inject('RABBITMQ_SERVICE') private readonly rabbitClient: ClientProxy,
+        @Optional() private readonly metricsService?: MetricsService,
     ) { }
 
     onModuleInit() {
         this.productService = this.client.getService<ProductGrpcService>('ProductService');
+    }
+
+    private getGrpcMetadata(): Metadata {
+        const meta = new Metadata();
+        meta.set('x-correlation-id', getCorrelationId());
+        return meta;
     }
 
     async create(dto: CreateOrderDto): Promise<Order> {
@@ -132,7 +142,10 @@ export class OrderServiceService implements OnModuleInit {
         let checkResult: CheckStockResponse;
         try {
             checkResult = await firstValueFrom(
-                this.productService.checkStock({ items: normalizedItems }),
+                this.productService.checkStock(
+                    { items: normalizedItems },
+                    this.getGrpcMetadata(),
+                ),
             );
         } catch (err: any) {
             throw new BadRequestException(
@@ -143,6 +156,7 @@ export class OrderServiceService implements OnModuleInit {
         if (!checkResult.allAvailable) {
             const unavailable = checkResult.items.filter((i) => !i.available);
             const messages = unavailable.map((i) => i.message).join('; ');
+            this.metricsService?.recordStockReservation('INSUFFICIENT_STOCK');
             throw new BadRequestException(`Order cannot be placed: ${messages}`);
         }
 
@@ -154,19 +168,25 @@ export class OrderServiceService implements OnModuleInit {
         let reserveResult: ReserveStockResponse;
         try {
             reserveResult = await firstValueFrom(
-                this.productService.reserveStock({ items: normalizedItems }),
+                this.productService.reserveStock(
+                    { items: normalizedItems },
+                    this.getGrpcMetadata(),
+                ),
             );
         } catch (err: any) {
+            this.metricsService?.recordStockReservation('ERROR');
             throw new BadRequestException(
                 `Stock reservation failed: ${err?.message ?? 'Service unavailable'}`,
             );
         }
 
         if (!reserveResult.success) {
+            this.metricsService?.recordStockReservation('INSUFFICIENT_STOCK');
             throw new BadRequestException(
                 reserveResult.message || 'Failed to reserve stock for items',
             );
         }
+        this.metricsService?.recordStockReservation('SUCCESS');
 
         // 6. Calculate total price
         const total = normalizedItems.reduce((sum, item) => {
@@ -194,7 +214,9 @@ export class OrderServiceService implements OnModuleInit {
                     items: true,
                 },
             });
+            this.metricsService?.recordOrder('CONFIRMED');
         } catch (dbError: any) {
+            this.metricsService?.recordOrder('FAILED');
             // CRITICAL: Database failure after stock was reserved -> COMPENSATE by releasing stock
             this.logger.error(
                 `PostgreSQL order creation failed: ${dbError.message}. Initiating stock release compensation...`,
@@ -202,7 +224,10 @@ export class OrderServiceService implements OnModuleInit {
 
             try {
                 await firstValueFrom(
-                    this.productService.releaseStock({ items: normalizedItems }),
+                    this.productService.releaseStock(
+                        { items: normalizedItems },
+                        this.getGrpcMetadata(),
+                    ),
                 );
                 this.logger.log('Stock successfully released after order DB error.');
             } catch (compensationError: any) {
@@ -236,6 +261,7 @@ export class OrderServiceService implements OnModuleInit {
                     price: priceMap.get(item.productId) ?? 0,
                 })),
                 createdAt: order.createdAt.toISOString(),
+                correlationId: getCorrelationId(),
             });
             this.logger.log(`Published order.created event for orderId: ${order.id}`);
         } catch (publishError: any) {

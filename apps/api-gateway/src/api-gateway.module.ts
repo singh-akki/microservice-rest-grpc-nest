@@ -1,8 +1,14 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { RedisModule } from '@app/redis';
+import {
+  ObservabilityModule,
+  CorrelationIdMiddleware,
+  LoggingInterceptor,
+  MetricsInterceptor,
+} from '@app/observability';
 import { ApiGatewayController } from './api-gateway.controller.js';
 import { ApiGatewayService } from './api-gateway.service.js';
 import { ProductsModule } from './products/products.module.js';
@@ -17,6 +23,7 @@ import { HealthService } from './health/health.service.js';
     ConfigModule.forRoot({ isGlobal: true }),
     RedisModule,
     RateLimitModule,
+    ObservabilityModule,
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -44,7 +51,19 @@ import { HealthService } from './health/health.service.js';
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: LoggingInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: MetricsInterceptor,
+    },
     HealthService,
   ],
 })
-export class ApiGatewayModule { }
+export class ApiGatewayModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+  }
+}
