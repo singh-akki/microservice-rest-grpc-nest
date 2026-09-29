@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+FROM node:22-alpine AS base
+RUN apk add --no-cache libc6-compat openssl curl
+WORKDIR /app
+
+FROM base AS dependencies
+COPY package*.json ./
+COPY prisma ./prisma/
+RUN npm ci && npx prisma generate
+
+FROM dependencies AS builder
+COPY nest-cli.json tsconfig*.json ./
+COPY proto ./proto/
+COPY libs ./libs/
+COPY apps ./apps/
+RUN npx nest build product-service
+
+FROM base AS runner
+ENV NODE_ENV=production
+WORKDIR /app
+
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY --from=dependencies /app/prisma ./prisma
+COPY --from=builder /app/dist/apps/product-service ./dist/apps/product-service
+COPY --from=builder /app/proto ./proto
+COPY --from=builder /app/package.json ./package.json
+
+USER node
+
+EXPOSE 50051 3001
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:3001/health || exit 1
+
+CMD ["node", "dist/apps/product-service/src/main.js"]

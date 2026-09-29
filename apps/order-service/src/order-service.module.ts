@@ -13,6 +13,7 @@ import {
 } from '@app/observability';
 import { OrderServiceController } from './order-service.controller.js';
 import { OrderServiceService } from './order-service.service.js';
+import { HealthController } from './health.controller.js';
 
 @Module({
   imports: [
@@ -47,7 +48,7 @@ import { OrderServiceService } from './order-service.service.js';
       },
     ]),
   ],
-  controllers: [OrderServiceController],
+  controllers: [OrderServiceController, HealthController],
   providers: [
     OrderServiceService,
     {
