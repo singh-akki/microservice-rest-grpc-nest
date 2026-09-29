@@ -1,0 +1,70 @@
+{
+  "compilerOptions": {
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "resolvePackageJsonExports": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2023",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "strictPropertyInitialization": false,
+    "types": [
+      "vitest/globals",
+      "node"
+    ],
+    "resolveJsonModule": true,
+    "paths": {
+      "@app/database": [
+        "./libs/database/src"
+      ],
+      "@app/database/*": [
+        "./libs/database/src/*"
+      ],
+      "@app/redis": [
+        "./libs/redis/src"
+      ],
+      "@app/redis/*": [
+        "./libs/redis/src/*"
+      ],
+      "@app/cache/redis": [
+        "./libs/redis/src"
+      ],
+      "@app/cache/redis/*": [
+        "./libs/redis/src/*"
+      ]
+    }
+  },
+  "files": [],
+  "references": [
+    {
+      "path": "./apps/ecom-management/tsconfig.app.json"
+    },
+    {
+      "path": "./apps/api-gateway/tsconfig.app.json"
+    },
+    {
+      "path": "./apps/product-service/tsconfig.app.json"
+    },
+    {
+      "path": "./apps/order-service/tsconfig.app.json"
+    },
+    {
+      "path": "./apps/notification-service/tsconfig.app.json"
+    },
+    {
+      "path": "./libs/database/tsconfig.lib.json"
+    },
+    {
+      "path": "./libs/redis/tsconfig.lib.json"
+    }
+  ]
+}
